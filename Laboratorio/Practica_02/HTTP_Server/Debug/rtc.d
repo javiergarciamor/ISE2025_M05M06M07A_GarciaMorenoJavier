@@ -39,6 +39,3 @@
 .\debug\rtc.o: RTC.h
 .\debug\rtc.o: C:\Users\Javier\AppData\Local\Arm\Packs\ARM\CMSIS\5.8.0\CMSIS\RTOS2\Include\cmsis_os2.h
 .\debug\rtc.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\time.h
-.\debug\rtc.o: C:\Users\Javier\AppData\Local\Arm\Packs\Keil\MDK-Middleware\7.13.0\Network\Include\rl_net_lib.h
-.\debug\rtc.o: C:\Users\Javier\AppData\Local\Arm\Packs\Keil\MDK-Middleware\7.13.0\Network\Include\rl_net_ds.h
-.\debug\rtc.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h

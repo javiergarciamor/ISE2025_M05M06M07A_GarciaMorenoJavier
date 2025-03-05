@@ -85,9 +85,10 @@ int main(void)
   osKernelInitialize ();
 	
   /* Create application main thread */
-  osThreadNew(app_main, NULL, &app_main_attr);
+  //osThreadNew(app_main, NULL, &app_main_attr);   --Parado para pruebas RTC
 	
 	Init_ThLCD();
+	
 
   /* Start thread execution */
   osKernelStart();

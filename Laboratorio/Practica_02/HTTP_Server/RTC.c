@@ -4,13 +4,20 @@
 #include "RTC.h"
 #include "cmsis_os2.h"                          // CMSIS RTOS header file
 #include <time.h>
-#include "rl_net_lib.h"
+
+
 
 /* RTC handler declaration */
 RTC_HandleTypeDef RtcHandle;
 RTC_DateTypeDef sdatestructure;
 RTC_TimeTypeDef stimestructure;
+RTC_AlarmTypeDef  alarmRtc;
 
+ /* Thread Alarma */
+osThreadId_t tid_ThAlarm;                        // thread id
+void ThAlarm (void *argument);                   // thread function
+
+void RTC_AlarmConfig(void);
 
 /*---------------------------------------------------
  *    			       Configuracion
@@ -84,7 +91,8 @@ void init_RTC(void){
 	
   HAL_RTC_Init(&RtcHandle);
 
-
+  RTC_AlarmConfig();
+	tid_ThAlarm = osThreadNew(ThAlarm, NULL, NULL); //Se crea el hilo de la Alarma
 }
 
 
@@ -140,9 +148,50 @@ void RTC_CalendarShow(uint8_t *showtime, uint8_t *showdate)
   sprintf((char *)showdate, "%02d / %02d / %02d",sdatestructure.Date, sdatestructure.Month, 2000 + sdatestructure.Year);
 }
 
+/*---------------------------------------------------
+ *                      Alarma
+ *---------------------------------------------------*/
+void RTC_AlarmConfig(void)
+{
+  alarmRtc.AlarmTime.Hours =  stimestructure.Hours;
+  alarmRtc.AlarmTime.Minutes = stimestructure.Minutes;
+  alarmRtc.AlarmTime.Seconds = 0;
+  alarmRtc.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  alarmRtc.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  alarmRtc.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY | RTC_ALARMMASK_HOURS | RTC_ALARMMASK_MINUTES;
+  alarmRtc.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  alarmRtc.AlarmDateWeekDay = 0x1;
+  alarmRtc.Alarm = RTC_ALARM_A;
+  HAL_NVIC_SetPriority(RTC_Alarm_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(RTC_Alarm_IRQn);
+	
+	// Enable the alarm interrupt
+	HAL_RTC_SetAlarm_IT(&RtcHandle, &alarmRtc, RTC_FORMAT_BIN);
+	
+	// Unmask the RTC Alarm A interrupt
+	CLEAR_BIT(RtcHandle.Instance->CR, RTC_CR_ALRAIE);
+	
+}
 
+static void Timer_Callback_5s (void const *arg) {
+	HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_0);
+}
 
+/*---------------------------------------------------
+ *                  Thread Alarma
+ *---------------------------------------------------*/
+void ThAlarm (void *argument) {
+  osTimerId_t tim_id_5s;
+	uint32_t exec = 1U;
+	tim_id_5s = osTimerNew((osTimerFunc_t)&Timer_Callback_5s, osTimerPeriodic, &exec, NULL);
+  while (1) {
+    
+		osThreadFlagsWait(Flag_Alarm, osFlagsWaitAny, osWaitForever);
+		osTimerStart(tim_id_5s, 5000U);			
+	  osThreadYield(); // suspend thread  
+  }
 
+}
 
 
 

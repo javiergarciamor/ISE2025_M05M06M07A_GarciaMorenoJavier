@@ -12,7 +12,8 @@
 #define RTC_ASYNCH_PREDIV  0x7F   /* LSE as RTC clock */
 #define RTC_SYNCH_PREDIV   0x00FF /* LSE as RTC clock */
 
-
+#define Flag_Alarm        0x00000002U
+#define Flag_FinParpadeo  0x00000004U
 
 /* Functions ------------------------------------------------------- */
 void Init_timers (void);
