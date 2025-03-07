@@ -1,45 +1,61 @@
-/* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_hal.h"
 #include <stdio.h>
-#include "RTC.h"
-#include "cmsis_os2.h"                          // CMSIS RTOS header file
+#include "rtc.h"
+                     // CMSIS RTOS header file
 #include <time.h>
+#include "rl_net_lib.h"
+#include "rl_net.h"                     // Keil.MDK-Pro::Network:CORE
 
+#define RTC_ASYNCH_PREDIV  0x7F   /* LSE as RTC clock */
+#define RTC_SYNCH_PREDIV   0x00FF /* LSE as RTC clock */
 
+mytime_t g_time;
 
-/* RTC handler declaration */
 RTC_HandleTypeDef RtcHandle;
 RTC_DateTypeDef sdatestructure;
 RTC_TimeTypeDef stimestructure;
-RTC_AlarmTypeDef  alarmRtc;
 
- /* Thread Alarma */
-osThreadId_t tid_ThAlarm;                        // thread id
-void ThAlarm (void *argument);                   // thread function
+static uint32_t exec;  
+osTimerId_t tim_id_3min;
 
-void RTC_AlarmConfig(void);
+struct tm ts;
+static void time_callback (uint32_t seconds, uint32_t seconds_fraction);
 
-/*---------------------------------------------------
- *    			       Configuracion
- *---------------------------------------------------*/
-void HAL_RTC_MspInit(RTC_HandleTypeDef *hrtc)
-{
+static osThreadId_t id_Th_rtc;
+static void Th_rtc(void *arg);
+int init_Th_rtc(void);
+
+static void init_rtc(void);
+static void init_SNTP(void);
+static void RTC_CalendarConfig(void);
+static void RTC_Show(void);
+static void Init_timers (void);
+
+
+static void Timer_Callback_3min (void const *arg) {
+	 init_SNTP(); // Cada 3 min se llama al servidor SNTP
+}
+
+static void Init_timers (void) {
+	exec = 1U;
+	tim_id_3min = osTimerNew((osTimerFunc_t)&Timer_Callback_3min, osTimerPeriodic, &exec, NULL);
+
+}
+
+int init_Th_rtc(void){
+	id_Th_rtc = osThreadNew(Th_rtc, NULL, NULL);
+	if(id_Th_rtc == NULL)
+		return(-1);
+	return(0);
+}
+
+void HAL_RTC_MspInit(RTC_HandleTypeDef *hrtc){
   RCC_OscInitTypeDef        RCC_OscInitStruct;
   RCC_PeriphCLKInitTypeDef  PeriphClkInitStruct;
 
-  /*##-1- Enables the PWR Clock and Enables access to the backup domain ###################################*/
-  /* To change the source clock of the RTC feature (LSE, LSI), You have to:
-     - Enable the power clock using __HAL_RCC_PWR_CLK_ENABLE()
-     - Enable write access using HAL_PWR_EnableBkUpAccess() function before to 
-       configure the RTC clock source (to be done once after reset).
-     - Reset the Back up Domain using __HAL_RCC_BACKUPRESET_FORCE() and 
-       __HAL_RCC_BACKUPRESET_RELEASE().
-     - Configure the needed RTc clock source */
   __HAL_RCC_PWR_CLK_ENABLE();
   HAL_PWR_EnableBkUpAccess();
 
-  
-  /*##-2- Configure LSE as RTC clock source ###################################*/
   RCC_OscInitStruct.OscillatorType =  RCC_OSCILLATORTYPE_LSE;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
@@ -50,36 +66,41 @@ void HAL_RTC_MspInit(RTC_HandleTypeDef *hrtc)
   PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
   HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct);
 
-  
-  /*##-3- Enable RTC peripheral Clocks #######################################*/
-  /* Enable RTC Clock */
   __HAL_RCC_RTC_ENABLE();
 }
 
-void HAL_RTC_MspDeInit(RTC_HandleTypeDef *hrtc)
-{
-  /*##-1- Reset peripherals ##################################################*/
+
+void HAL_RTC_MspDeInit(RTC_HandleTypeDef *hrtc){
   __HAL_RCC_RTC_DISABLE();
 
-  /*##-2- Disables the PWR Clock and Disables access to the backup domain ###################################*/
   HAL_PWR_DisableBkUpAccess();
   __HAL_RCC_PWR_CLK_DISABLE();
   
 }
 
-/*---------------------------------------------------
- *    			           Inicio
- *---------------------------------------------------*/
-void init_RTC(void){
-  /*##-1- Configure the RTC peripheral #######################################*/
-  /* Configure RTC prescaler and RTC data registers */
-  /* RTC configured as follows:
-      - Hour Format    = Format 24
-      - Asynch Prediv  = Value according to source clock
-      - Synch Prediv   = Value according to source clock
-      - OutPut         = Output Disable
-      - OutPutPolarity = High Polarity
-      - OutPutType     = Open Drain */ 
+
+static void RTC_CalendarConfig(void){
+  sdatestructure.Year = 0x14;
+  sdatestructure.Month = RTC_MONTH_APRIL;
+  sdatestructure.Date = 0x14;
+  sdatestructure.WeekDay = RTC_WEEKDAY_TUESDAY;
+  
+  HAL_RTC_SetDate(&RtcHandle,&sdatestructure,RTC_FORMAT_BCD);
+
+  stimestructure.Hours = 0x23;
+  stimestructure.Minutes = 0x59;
+  stimestructure.Seconds = 0x00;
+  stimestructure.TimeFormat = RTC_HOURFORMAT12_PM;
+  stimestructure.DayLightSaving = RTC_DAYLIGHTSAVING_NONE ;
+  stimestructure.StoreOperation = RTC_STOREOPERATION_RESET;
+
+  HAL_RTC_SetTime(&RtcHandle, &stimestructure, RTC_FORMAT_BCD);
+
+  HAL_RTCEx_BKUPWrite(&RtcHandle, RTC_BKP_DR1, 0x32F2);
+}
+
+
+static void init_rtc(void){
   RtcHandle.Instance = RTC; 
   RtcHandle.Init.HourFormat = RTC_HOURFORMAT_24;
   RtcHandle.Init.AsynchPrediv = RTC_ASYNCH_PREDIV;
@@ -90,110 +111,67 @@ void init_RTC(void){
   __HAL_RTC_RESET_HANDLE_STATE(&RtcHandle);
 	
   HAL_RTC_Init(&RtcHandle);
-
-  RTC_AlarmConfig();
-	tid_ThAlarm = osThreadNew(ThAlarm, NULL, NULL); //Se crea el hilo de la Alarma
+	
+  if (HAL_RTCEx_BKUPRead(&RtcHandle, RTC_BKP_DR1) != 0x32F2)
+  {
+    RTC_CalendarConfig();
+  }
+	else
+    __HAL_RCC_CLEAR_RESET_FLAGS();
+	
+  init_SNTP();
 }
 
 
-/*---------------------------------------------------
- *      Configuracion de la hora y la fecha
- *---------------------------------------------------*/
- void RTC_CalendarConfig(uint8_t hour, uint8_t min, uint8_t sec,  uint8_t day, uint8_t month,  uint8_t year)
-{
-
-  /*##-1- Configure the Date #################################################*/
-  /* Set Date: Tuesday February 18th 2014 */
-  sdatestructure.Year = year;
-  sdatestructure.Month = month; //RTC_MONTH_FEBRUARY
-  sdatestructure.Date = day;
-  sdatestructure.WeekDay = RTC_WEEKDAY_TUESDAY;
-  
-  HAL_RTC_SetDate(&RtcHandle,&sdatestructure,RTC_FORMAT_BCD);
-
-
-  /*##-2- Configure the Time #################################################*/
-  /* Set Time: 02:00:00 */
-  stimestructure.Hours = hour;
-  stimestructure.Minutes = min;
-  stimestructure.Seconds = sec;
-  stimestructure.TimeFormat = RTC_HOURFORMAT12_AM;
-  stimestructure.DayLightSaving = RTC_DAYLIGHTSAVING_NONE ;
-  stimestructure.StoreOperation = RTC_STOREOPERATION_RESET;
-
-  HAL_RTC_SetTime(&RtcHandle, &stimestructure, RTC_FORMAT_BCD);
-
-
-  /*##-3- Writes a data in a RTC Backup data Register1 #######################*/
-  HAL_RTCEx_BKUPWrite(&RtcHandle, RTC_BKP_DR1, 0x32F2);
-}
-
-/**
-  * @brief  Display the current time and date.
-  * @param  showtime : pointer to buffer
-  * @param  showdate : pointer to buffer
-  * @retval None
-  */
-void RTC_CalendarShow(uint8_t *showtime, uint8_t *showdate)
-{
-  /* Get the RTC current Time */
+static void RTC_Show(){
   HAL_RTC_GetTime(&RtcHandle, &stimestructure, RTC_FORMAT_BIN);
-  /* Get the RTC current Date */
   HAL_RTC_GetDate(&RtcHandle, &sdatestructure, RTC_FORMAT_BIN);
 	
-  /* Display time Format : hh:mm:ss */
-  sprintf((char *)showtime, "%02d:%02d:%02d", stimestructure.Hours, stimestructure.Minutes, stimestructure.Seconds);
-
-  /* Display date Format : mm-dd-yy */
-  sprintf((char *)showdate, "%02d / %02d / %02d",sdatestructure.Date, sdatestructure.Month, 2000 + sdatestructure.Year);
+	g_time.year = 2000 + sdatestructure.Year;
+	g_time.month = sdatestructure.Month;
+	g_time.day = sdatestructure.Date;
+	g_time.hour = stimestructure.Hours;
+	g_time.min= stimestructure.Minutes;
+	g_time.sec = stimestructure.Seconds;
 }
 
-/*---------------------------------------------------
- *                      Alarma
- *---------------------------------------------------*/
-void RTC_AlarmConfig(void)
-{
-  alarmRtc.AlarmTime.Hours =  stimestructure.Hours;
-  alarmRtc.AlarmTime.Minutes = stimestructure.Minutes;
-  alarmRtc.AlarmTime.Seconds = 0;
-  alarmRtc.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  alarmRtc.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  alarmRtc.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY | RTC_ALARMMASK_HOURS | RTC_ALARMMASK_MINUTES;
-  alarmRtc.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-  alarmRtc.AlarmDateWeekDay = 0x1;
-  alarmRtc.Alarm = RTC_ALARM_A;
-  HAL_NVIC_SetPriority(RTC_Alarm_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(RTC_Alarm_IRQn);
-	
-	// Enable the alarm interrupt
-	HAL_RTC_SetAlarm_IT(&RtcHandle, &alarmRtc, RTC_FORMAT_BIN);
-	
-	// Unmask the RTC Alarm A interrupt
-	CLEAR_BIT(RtcHandle.Instance->CR, RTC_CR_ALRAIE);
-	
+
+static void init_SNTP (void) {
+  netStatus status = netSNTPc_GetTime (NULL, time_callback);
 }
 
-static void Timer_Callback_5s (void const *arg) {
-	HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_0);
-}
 
-/*---------------------------------------------------
- *                  Thread Alarma
- *---------------------------------------------------*/
-void ThAlarm (void *argument) {
-  osTimerId_t tim_id_5s;
-	uint32_t exec = 1U;
-	tim_id_5s = osTimerNew((osTimerFunc_t)&Timer_Callback_5s, osTimerPeriodic, &exec, NULL);
-  while (1) {
-    
-		osThreadFlagsWait(Flag_Alarm, osFlagsWaitAny, osWaitForever);
-		osTimerStart(tim_id_5s, 5000U);			
-	  osThreadYield(); // suspend thread  
+static void time_callback (uint32_t seconds, uint32_t seconds_fraction) {
+  if (seconds != 0) {
+		ts = *localtime(&seconds);
+		sdatestructure.Year = ts.tm_year - 100;
+		sdatestructure.Month = ts.tm_mon + 1;
+		sdatestructure.Date = ts.tm_mday;
+		sdatestructure.WeekDay = ts.tm_wday;
+		
+		HAL_RTC_SetDate(&RtcHandle,&sdatestructure,RTC_FORMAT_BIN);
+
+		stimestructure.Hours = ts.tm_hour + 2 ;
+		stimestructure.Minutes = ts.tm_min;
+		stimestructure.Seconds = ts.tm_sec;
+		stimestructure.TimeFormat = RTC_HOURFORMAT_24;
+		stimestructure.DayLightSaving = ts.tm_isdst ;
+		stimestructure.StoreOperation = RTC_STOREOPERATION_RESET;
+		 
+		HAL_RTC_SetTime(&RtcHandle, &stimestructure, RTC_FORMAT_BIN);
+	
+		HAL_RTCEx_BKUPWrite(&RtcHandle, RTC_BKP_DR1, 0x32F2);
   }
-
 }
 
 
-
-
-
+static void Th_rtc(void *argument){
+  netInitialize();
+	init_rtc();
+	Init_timers();
+	osTimerStart(tim_id_3min, AUTO_SYNC_TIME_S);
+	while(1){
+	  RTC_Show();
+    osDelay (1000);
+	}
+}
