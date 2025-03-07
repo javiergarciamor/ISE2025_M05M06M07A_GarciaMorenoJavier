@@ -76,9 +76,6 @@ int main(void)
   SystemClock_Config();
   SystemCoreClockUpdate();
 	
-	init_RTC();
-	
-	RTC_CalendarConfig(0x14, 0x00, 0x00,0x05, 0x03, 0x25);
 	
 #ifdef RTE_CMSIS_RTOS2
   /* Initialize CMSIS-RTOS2 */
@@ -88,7 +85,7 @@ int main(void)
   //osThreadNew(app_main, NULL, &app_main_attr);   --Parado para pruebas RTC
 	
 	Init_ThLCD();
-	
+	init_Th_rtc();
 
   /* Start thread execution */
   osKernelStart();
@@ -97,7 +94,6 @@ int main(void)
   /* Infinite loop */
   while (1)
   {
-		RTC_CalendarShow(aShowTime, aShowDate);
   }
 }
 
