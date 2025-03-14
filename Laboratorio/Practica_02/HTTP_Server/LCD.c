@@ -53,17 +53,19 @@ void ThLCD (void *argument) {
 	Init_MsgQueue_LCD_send();
 	LCD_fristConf();
 
-	uint8_t aShowTime[50] = {0};
-  uint8_t aShowDate[50] = {0};
+	char aShowTime[50] = {0};
+  char aShowDate[50] = {0};
 	
   while (1) {
 		
 		//osMessageQueueGet(get_id_MsgQueue_LCD(), &LCD_recibida, NULL, osWaitForever);
 		
-		RTC_CalendarShow(aShowTime, aShowDate);
+		//RTC_CalendarShow(aShowTime, aShowDate);
 		
+		sprintf(aShowTime, "%02d:%02d:%02d", g_time.hour, g_time.min, g_time.sec);
+		sprintf(aShowDate, "%02d/%02d/%02d", g_time.day, g_time.month, g_time.year);
 		
-			LCD_Clean();
+		LCD_Clean();
 		
 		LCD_write(1, aShowTime);
 		LCD_write(2, aShowDate);

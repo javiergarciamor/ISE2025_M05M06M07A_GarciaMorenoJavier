@@ -166,7 +166,7 @@ static void time_callback (uint32_t seconds, uint32_t seconds_fraction) {
 
 
 static void Th_rtc(void *argument){
-  netInitialize();
+  //netInitialize();
 	init_rtc();
 	Init_timers();
 	osTimerStart(tim_id_3min, AUTO_SYNC_TIME_S);

@@ -42,3 +42,4 @@
 .\debug\http_server.o: LEDs.h
 .\debug\http_server.o: LCD.h
 .\debug\http_server.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+.\debug\http_server.o: ADC.h
